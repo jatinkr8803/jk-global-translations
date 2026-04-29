@@ -144,7 +144,7 @@ form?.addEventListener('submit', async (e) => {
   submitLoader.style.display = 'block';
 
   try {
-    const API_URL = window.API_URL || 'http://localhost:3001';
+    const API_URL = "https://jk-global-api.onrender.com";
     const res = await fetch(`${API_URL}/contact`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
