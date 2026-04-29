@@ -8,7 +8,7 @@ const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
-const { Resend } = require('resend'); // ✅ NEW
+const { Resend } = require('resend');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -38,8 +38,19 @@ const saveLead = (lead) => {
   fs.writeFileSync(LEADS_FILE, JSON.stringify(leads, null, 2));
 };
 
-// ---- RESEND SETUP ----
-const resend = new Resend(process.env.RESEND_API_KEY);
+// ---- RESEND SETUP (SAFE INIT) ----
+let resend = null;
+
+if (!process.env.RESEND_API_KEY) {
+  console.error("❌ RESEND_API_KEY missing");
+} else {
+  try {
+    resend = new Resend(process.env.RESEND_API_KEY);
+    console.log("✅ Resend initialized");
+  } catch (err) {
+    console.error("❌ Resend init error:", err.message);
+  }
+}
 
 // ---- VALIDATION ----
 const validate = ({ name, email, projectType, message }) => {
@@ -88,6 +99,11 @@ app.post('/contact', async (req, res) => {
   // Send email
   const sendMail = async () => {
     try {
+      if (!resend) {
+        console.error("❌ Resend not initialized");
+        return;
+      }
+
       // 📩 Admin notification
       await resend.emails.send({
         from: 'onboarding@resend.dev',
