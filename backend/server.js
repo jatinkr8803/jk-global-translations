@@ -6,9 +6,9 @@
 
 const express = require('express');
 const cors = require('cors');
-const nodemailer = require('nodemailer');
 const fs = require('fs');
 const path = require('path');
+const { Resend } = require('resend'); // ✅ NEW
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -27,7 +27,9 @@ const loadLeads = () => {
   try {
     if (!fs.existsSync(LEADS_FILE)) return [];
     return JSON.parse(fs.readFileSync(LEADS_FILE, 'utf-8'));
-  } catch { return []; }
+  } catch {
+    return [];
+  }
 };
 
 const saveLead = (lead) => {
@@ -36,16 +38,8 @@ const saveLead = (lead) => {
   fs.writeFileSync(LEADS_FILE, JSON.stringify(leads, null, 2));
 };
 
-// ---- EMAIL TRANSPORTER (configure with your credentials) ----
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || 'smtp.gmail.com',
-  port: process.env.SMTP_PORT || 587,
-  secure: false,
-  auth: {
-    user: process.env.SMTP_USER || 'your_email@gmail.com',
-    pass: process.env.SMTP_PASS || 'your_app_password',
-  },
-});
+// ---- RESEND SETUP ----
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 // ---- VALIDATION ----
 const validate = ({ name, email, projectType, message }) => {
@@ -84,67 +78,61 @@ app.post('/contact', async (req, res) => {
     ip: req.ip,
   };
 
-  // Save lead to JSON
+  // Save lead
   try {
     saveLead(lead);
   } catch (err) {
     console.error('Lead save error:', err);
   }
 
-  // Send email notification (non-blocking)
+  // Send email
   const sendMail = async () => {
     try {
-      const mailOptions = {
-        from: `"JK Global Translations" <${process.env.SMTP_USER || 'noreply@jkglobaltranslations.com'}>`,
-        to: process.env.NOTIFY_EMAIL || 'jatin@jkglobaltranslations.com',
+      // 📩 Admin notification
+      await resend.emails.send({
+        from: 'onboarding@resend.dev',
+        to: process.env.NOTIFY_EMAIL,
         subject: `🌐 New Lead: ${projectType} — ${name}`,
         html: `
-          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; background: #0f172a; color: #e2e8f0; padding: 32px; border-radius: 12px;">
-            <h2 style="color: #4f8ef7; margin-bottom: 24px;">New Quote Request</h2>
-            <table style="width: 100%; border-collapse: collapse;">
-              <tr><td style="padding: 10px 0; color: #94a3b8; width: 140px;">Name</td><td style="padding: 10px 0; font-weight: 600;">${lead.name}</td></tr>
-              <tr><td style="padding: 10px 0; color: #94a3b8;">Email</td><td style="padding: 10px 0;"><a href="mailto:${lead.email}" style="color: #4f8ef7;">${lead.email}</a></td></tr>
-              <tr><td style="padding: 10px 0; color: #94a3b8;">Service</td><td style="padding: 10px 0;">${lead.projectType}</td></tr>
-              <tr><td style="padding: 10px 0; color: #94a3b8; vertical-align: top;">Message</td><td style="padding: 10px 0; line-height: 1.6;">${lead.message}</td></tr>
-              <tr><td style="padding: 10px 0; color: #94a3b8;">Time</td><td style="padding: 10px 0;">${new Date(lead.timestamp).toLocaleString()}</td></tr>
-            </table>
-            <p style="margin-top: 32px; font-size: 12px; color: #475569;">JK Global Translations API · Lead ID: ${lead.id}</p>
-          </div>
+          <h2>New Quote Request</h2>
+          <p><strong>Name:</strong> ${lead.name}</p>
+          <p><strong>Email:</strong> ${lead.email}</p>
+          <p><strong>Service:</strong> ${lead.projectType}</p>
+          <p><strong>Message:</strong> ${lead.message}</p>
+          <p><strong>Time:</strong> ${new Date(lead.timestamp).toLocaleString()}</p>
         `,
-      };
+      });
 
-      // Also send auto-reply to client
-      const autoReply = {
-        from: `"JK Global Translations" <${process.env.SMTP_USER}>`,
+      // 📩 Auto reply
+      await resend.emails.send({
+        from: 'onboarding@resend.dev',
         to: lead.email,
         subject: `We received your request — JK Global Translations`,
         html: `
-          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; background: #0f172a; color: #e2e8f0; padding: 32px; border-radius: 12px;">
-            <h2 style="color: #4f8ef7;">Thank you, ${lead.name}!</h2>
-            <p style="line-height: 1.7; color: #94a3b8;">We've received your request for <strong style="color: #e2e8f0;">${lead.projectType}</strong> services. Our team will review your project details and get back to you within <strong style="color: #1dd8a0;">2 business hours</strong>.</p>
-            <p style="line-height: 1.7; color: #94a3b8;">In the meantime, feel free to reply to this email with any additional details.</p>
-            <p style="margin-top: 32px; color: #94a3b8;">Best regards,<br><strong style="color: #e2e8f0;">Jatin Kumar</strong><br>Founder & Translation Specialist<br>JK Global Translations</p>
-          </div>
+          <h2>Thank you, ${lead.name}!</h2>
+          <p>We’ve received your request for <strong>${lead.projectType}</strong>.</p>
+          <p>Our team will contact you within 2 hours.</p>
+          <br>
+          <p>— JK Global Translations</p>
         `,
-      };
+      });
 
-      await transporter.sendMail(mailOptions);
-      await transporter.sendMail(autoReply);
+      console.log('✅ Emails sent successfully');
     } catch (err) {
-      console.error('Email error:', err.message);
+      console.error('❌ Email error:', err.message);
     }
   };
 
-  sendMail(); // Fire and forget
+  sendMail();
 
   return res.status(200).json({
     success: true,
-    message: 'Your message has been received. We\'ll respond within 2 hours.',
+    message: "Your message has been received. We'll respond within 2 hours.",
     leadId: lead.id,
   });
 });
 
-// Get all leads (protected — add auth in production!)
+// Protected leads route
 app.get('/leads', (req, res) => {
   const apiKey = req.headers['x-api-key'];
   if (apiKey !== process.env.ADMIN_KEY) {
@@ -155,7 +143,5 @@ app.get('/leads', (req, res) => {
 
 // ---- START ----
 app.listen(PORT, () => {
-  console.log(`\n🌐 JK Global Translations API running on port ${PORT}`);
-  console.log(`   Health: http://localhost:${PORT}/`);
-  console.log(`   Contact: POST http://localhost:${PORT}/contact\n`);
+  console.log(`🌐 JK Global Translations API running on port ${PORT}`);
 });
