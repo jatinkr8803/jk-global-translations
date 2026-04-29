@@ -3,6 +3,7 @@
  */
 
 console.log("🚀 SERVER FILE LOADED");
+
 const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
@@ -12,7 +13,7 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 const LEADS_FILE = path.join(__dirname, 'leads.json');
 
-// ---- SAFE RESEND IMPORT (IMPORTANT FIX) ----
+// ---- SAFE RESEND IMPORT ----
 let Resend;
 let resend = null;
 
@@ -34,12 +35,30 @@ if (!process.env.RESEND_API_KEY) {
   }
 }
 
-// ---- MIDDLEWARE ----
+// ---- ✅ FIXED CORS (IMPORTANT) ----
 app.use(cors({
-  origin: process.env.FRONTEND_URL || '*',
-  methods: ['GET', 'POST'],
+  origin: function (origin, callback) {
+    if (!origin) return callback(null, true); // allow Postman / curl
+
+    const allowedOrigins = [
+      "https://jk-global-translations.netlify.app"
+    ];
+
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.error("❌ Blocked by CORS:", origin);
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
+  methods: ["GET", "POST", "OPTIONS"],
+  credentials: true
 }));
 
+// allow preflight
+app.options('*', cors());
+
+// ---- BODY PARSER ----
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
