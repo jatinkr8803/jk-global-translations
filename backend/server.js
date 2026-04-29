@@ -2,6 +2,7 @@
  * JK Global Translations — Backend API
  */
 
+console.log("🚀 SERVER FILE LOADED");
 const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
